@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>每日巡查</title>
+  <!-- docx.js 用于生成 Word 文档 -->
+  <script src="https://unpkg.com/docx@7.8.2/build/index.js"></script>
+  <style>
+    /* ===== 全局重置 ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #1976d2;
+      --primary-dark: #1565c0;
+      --primary-light: #e3f2fd;
+      --danger: #e53935;
+      --success: #43a047;
+      --bg: #f5f7fa;
+      --card-bg: #ffffff;
+      --text: #333;
+      --text-muted: #888;
+      --border: #e0e0e0;
+      --radius: 12px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ===== 顶部栏 ===== */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--primary);
+      color: #fff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(25,118,210,0.3);
+    }
+
+    .header-left h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-left .date {
+      font-size: 12px;
+      opacity: 0.85;
+      margin-top: 2px;
+    }
+
+    .header-right .badge {
+      background: rgba(255,255,255,0.25);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    /* ===== 操作区 ===== */
+    .action-bar {
+      padding: 16px;
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 12px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(25,118,210,0.35);
+    }
+
+    .btn-primary:active { background: var(--primary-dark); transform: scale(0.97); }
+
+    .btn-secondary {
+      background: var(--card-bg);
+      color: var(--primary);
+      border: 2px solid var(--primary);
+    }
+
+    .btn-secondary:active { background: var(--primary-light); transform: scale(0.97); }
+
+    /* ===== 空状态 ===== */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 24px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .empty-state .icon { font-size: 64px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state p { font-size: 15px; line-height: 1.6; }
+
+    /* ===== 照片网格 ===== */
+    .photo-grid {
+      padding: 0 16px 100px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 480px) {
+      .photo-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ===== 照片卡片 ===== */
+    .photo-card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .photo-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+
+    .photo-card-header {
+      position: relative;
+      background: #000;
+      line-height: 0;
+    }
+
+    .photo-card img {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .photo-number {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 10px;
+      backdrop-filter: blur(4px);
+    }
+
+    .photo-time {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
+    }
+
+    .delete-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(229,57,53,0.85);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      backdrop-filter: blur(4px);
+    }
+
+    .delete-btn:hover { background: var(--danger); }
+
+    .photo-card-body {
+      padding: 12px;
+    }
+
+    .remark-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: #fafafa;
+      resize: vertical;
+      min-height: 70px;
+      transition: border-color 0.15s;
+      line-height: 1.5;
+    }
+
+    .remark-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #fff;
+    }
+
+    .remark-input::placeholder { color: #bbb; }
+
+    /* ===== 底部导出栏 ===== */
+    .export-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--card-bg);
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+      z-index: 100;
+    }
+
+    .btn-export {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(135deg, var(--primary), #1565c0);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(25,118,210,0.4);
+      transition: all 0.18s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-export:active { transform: scale(0.98); }
+    .btn-export:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+
+    /* ===== 摄像头弹窗 ===== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .camera-modal {
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      width: 100%;
+      max-width: 500px;
+      position: relative;
+    }
+
+    #cameraVideo {
+      width: 100%;
+      display: block;
+      max-height: 70vh;
+      background: #111;
+      object-fit: cover;
+    }
+
+    .camera-controls {
+      background: #111;
+      padding: 16px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .btn-capture {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      background: #fff;
+      border: 5px solid #aaa;
+      cursor: pointer;
+      transition: transform 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+
+    .btn-capture:active { transform: scale(0.9); background: #e0e0e0; }
+
+    .btn-close-camera {
+      padding: 14px 24px;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-close-camera:hover { background: rgba(255,255,255,0.25); }
+
+    /* ===== 提示 Toast ===== */
+    .toast {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 999;
+    }
+
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ===== 隐藏的 canvas ===== */
+    #snapCanvas { display: none; }
+
+    /* ===== 加载动画 ===== */
+    .btn-export .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- 顶部栏 -->
+<header class="header">
+  <div class="header-left">
+    <h1>📋 每日巡查</h1>
+    <div class="date" id="headerDate"></div>
+  </div>
+  <div class="header-right">
+    <span class="badge" id="photoBadge">0 张照片</span>
+  </div>
+</header>
+
+<!-- 操作按钮 -->
+<div class="action-bar">
+  <button class="btn btn-primary" onclick="openCamera()">
+    📷 拍照
+  </button>
+  <button class="btn btn-secondary" onclick="selectFile()">
+    📁 选择图片
+  </button>
+</div>
+
+<!-- 照片列表 -->
+<div id="photoGrid" class="photo-grid"></div>
+
+<!-- 空状态 -->
+<div id="emptyState" class="empty-state">
+  <div class="icon">📸</div>
+  <p>还没有照片<br />点击"拍照"或"选择图片"开始巡查</p>
+</div>
+
+<!-- 底部导出栏 -->
+<div class="export-bar">
+  <button class="btn-export" id="exportBtn" onclick="exportWord()">
+    <span class="spinner" id="exportSpinner"></span>
+    <span id="exportBtnText">📄 导出 Word 文档</span>
+  </button>
+</div>
+
+<!-- 摄像头弹窗 -->
+<div class="modal-overlay" id="cameraModal">
+  <div class="camera-modal">
+    <video id="cameraVideo" autoplay playsinline muted></video>
+    <div class="camera-controls">
+      <button class="btn-close-camera" onclick="closeCamera()">✕ 关闭</button>
+      <button class="btn-capture" onclick="capturePhoto()" title="拍摄"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 隐藏的 canvas 用于截帧 -->
+<canvas id="snapCanvas"></canvas>
+
+<!-- 隐藏的文件选择 input -->
+<input type="file" id="fileInput" accept="image/*" multiple style="display:none" onchange="handleFileSelect(event)" />
+
+<!-- Toast 提示 -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+//  数据层
+// ============================================================
+let photos = []; // { id, dataURL, time, remark }
+let mediaStream = null;
+let _idCounter = 0;
+
+// ============================================================
+//  初始化
+// ============================================================
+(function init() {
+  // 显示今日日期
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  document.getElementById('headerDate').textContent = dateStr;
+  renderPhotos();
+})();
+
+// ============================================================
+//  渲染照片列表
+// ============================================================
+function renderPhotos() {
+  const grid = document.getElementById('photoGrid');
+  const empty = document.getElementById('emptyState');
+  const badge = document.getElementById('photoBadge');
+
+  badge.textContent = photos.length + ' 张照片';
+
+  if (photos.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'flex';
+    return;
+  }
+
+  empty.style.display = 'none';
+
+  grid.innerHTML = photos.map((p, idx) => `
+    <div class="photo-card" id="card-${p.id}">
+      <div class="photo-card-header">
+        <img src="${p.dataURL}" alt="巡查照片 ${idx + 1}" loading="lazy" />
+        <span class="photo-number">No.${idx + 1}</span>
+        <span class="photo-time">${p.time}</span>
+        <button class="delete-btn" onclick="deletePhoto('${p.id}')" title="删除">✕</button>
+      </div>
+      <div class="photo-card-body">
+        <textarea
+          class="remark-input"
+          placeholder="请输入备注，如：巡查位置、发现问题等..."
+          oninput="updateRemark('${p.id}', this.value)"
+        >${escapeHTML(p.remark)}</textarea>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+//  摄像头相关
+// ============================================================
+async function openCamera() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    const video = document.getElementById('cameraVideo');
+    video.srcObject = mediaStream;
+    document.getElementById('cameraModal').classList.add('active');
+  } catch (err) {
+    console.error('摄像头错误:', err);
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showToast('摄像头权限被拒绝，请在浏览器设置中允许访问');
+    } else if (err.name === 'NotFoundError') {
+      showToast('未找到摄像头，请使用"选择图片"功能');
+    } else {
+      showToast('无法打开摄像头：' + err.message);
+    }
+  }
+}
+
+function closeCamera() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+  document.getElementById('cameraModal').classList.remove('active');
+  document.getElementById('cameraVideo').srcObject = null;
+}
+
+function capturePhoto() {
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('snapCanvas');
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 720;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+  addPhoto(dataURL);
+  closeCamera();
+  showToast('照片已添加');
+}
+
+// ============================================================
+//  文件选择
+// ============================================================
+function selectFile() {
+  document.getElementById('fileInput').click();
+}
+
+function handleFileSelect(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+
+  let loaded = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      addPhoto(e.target.result);
+      loaded++;
+      if (loaded === files.length) {
+        showToast(`已添加 ${files.length} 张照片`);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // 重置 input，允许重复选同一文件
+  event.target.value = '';
+}
+
+// ============================================================
+//  照片管理
+// ============================================================
+function addPhoto(dataURL) {
+  const now = new Date();
+  const time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const photo = { id: generateId(), dataURL, time, remark: '' };
+  photos.push(photo);
+
+  // 追加单张卡片，避免全量重建导致 textarea 失焦
+  const grid = document.getElementById('photoGrid');
+  const empty = document.getElementById('emptyState');
+  empty.style.display = 'none';
+
+  const idx = photos.length - 1;
+  const card = document.createElement('div');
+  card.className = 'photo-card';
+  card.id = 'card-' + photo.id;
+  card.innerHTML = `
+    <div class="photo-card-header">
+      <img src="${photo.dataURL}" alt="巡查照片 ${idx + 1}" loading="lazy" />
+      <span class="photo-number">No.${idx + 1}</span>
+      <span class="photo-time">${photo.time}</span>
+      <button class="delete-btn" onclick="deletePhoto('${photo.id}')" title="删除">✕</button>
+    </div>
+    <div class="photo-card-body">
+      <textarea
+        class="remark-input"
+        placeholder="请输入备注，如：巡查位置、发现问题等..."
+        oninput="updateRemark('${photo.id}', this.value)"
+      ></textarea>
+    </div>
+  `;
+  grid.appendChild(card);
+
+  // 更新徽章
+  document.getElementById('photoBadge').textContent = photos.length + ' 张照片';
+}
+
+function deletePhoto(id) {
+  // 先从数据中移除
+  photos = photos.filter(p => p.id !== id);
+
+  // 移除对应 DOM 卡片，避免全量重建
+  const card = document.getElementById('card-' + id);
+  if (card) card.remove();
+
+  // 更新徽章
+  document.getElementById('photoBadge').textContent = photos.length + ' 张照片';
+
+  // 更新空状态
+  const empty = document.getElementById('emptyState');
+  if (photos.length === 0) {
+    empty.style.display = 'flex';
+  }
+
+  // 重新编号所有序号
+  const grid = document.getElementById('photoGrid');
+  const cards = grid.querySelectorAll('.photo-card');
+  cards.forEach((c, i) => {
+    const numEl = c.querySelector('.photo-number');
+    if (numEl) numEl.textContent = 'No.' + (i + 1);
+  });
+
+  showToast('已删除');
+}
+
+function updateRemark(id, value) {
+  const p = photos.find(p => p.id === id);
+  if (p) p.remark = value;
+}
+
+// ============================================================
+//  导出 Word 文档
+// ============================================================
+async function exportWord() {
+  if (photos.length === 0) {
+    showToast('请先添加照片再导出');
+    return;
+  }
+
+  // 确保备注已同步（从 DOM 读取最新值）
+  syncRemarksFromDOM();
+
+  // 显示加载状态
+  setExportLoading(true);
+
+  try {
+    await buildAndDownloadDocx();
+    showToast('导出成功！');
+  } catch (err) {
+    console.error('导出失败:', err);
+    showToast('导出失败：' + err.message);
+  } finally {
+    setExportLoading(false);
+  }
+}
+
+function syncRemarksFromDOM() {
+  photos.forEach(p => {
+    const card = document.getElementById('card-' + p.id);
+    if (card) {
+      const textarea = card.querySelector('.remark-input');
+      if (textarea) p.remark = textarea.value;
+    }
+  });
+}
+
+async function buildAndDownloadDocx() {
+  const {
+    Document, Paragraph, TextRun, ImageRun,
+    AlignmentType, HeadingLevel, Table, TableRow, TableCell,
+    WidthType, BorderStyle, Packer
+  } = docx;
+
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fileDate = today.toISOString().slice(0, 10);
+
+  // 构建文档内容
+  const children = [];
+
+  // 标题
+  children.push(
+    new Paragraph({
+      text: '每日巡查报告',
+      heading: HeadingLevel.HEADING_1,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 }
+    })
+  );
+
+  // 日期
+  children.push(
+    new Paragraph({
+      children: [
+        new TextRun({ text: '巡查日期：', bold: true, size: 24 }),
+        new TextRun({ text: dateLabel, size: 24 }),
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 }
+    })
+  );
+
+  // 照片总数
+  children.push(
+    new Paragraph({
+      children: [
+        new TextRun({ text: '照片数量：', bold: true, size: 24 }),
+        new TextRun({ text: photos.length + ' 张', size: 24 }),
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 }
+    })
+  );
+
+  // 分隔线
+  children.push(
+    new Paragraph({
+      text: '────────────────────────────────────',
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 400 }
+    })
+  );
+
+  // 逐张照片
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
+
+    // 照片序号标题
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `第 ${i + 1} 张  （拍摄时间：${p.time}）`,
+            bold: true,
+            size: 26,
+            color: '1976d2'
+          })
+        ],
+        spacing: { before: 300, after: 200 }
+      })
+    );
+
+    // 插入图片
+    try {
+      const imageData = base64ToUint8Array(p.dataURL);
+      const mimeType = getMimeType(p.dataURL);
+      const dims = await getImageDimensions(p.dataURL);
+
+      // docx ImageRun transformation 单位是像素(px)，不是磅(pt)
+      // 540px ≈ 14.2cm at 96dpi，适合 A4 页面宽度
+      const MAX_WIDTH_PX = 540;
+      const MAX_HEIGHT_PX = 400;
+      let wPx = dims.width;
+      let hPx = dims.height;
+
+      if (wPx > MAX_WIDTH_PX) {
+        hPx = Math.round(hPx * (MAX_WIDTH_PX / wPx));
+        wPx = MAX_WIDTH_PX;
+      }
+      if (hPx > MAX_HEIGHT_PX) {
+        wPx = Math.round(wPx * (MAX_HEIGHT_PX / hPx));
+        hPx = MAX_HEIGHT_PX;
+      }
+
+      children.push(
+        new Paragraph({
+          children: [
+            new ImageRun({
+              data: imageData,
+              transformation: { width: wPx, height: hPx },
+              type: mimeType === 'image/png' ? 'png' : 'jpg'
+            })
+          ],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 160 }
+        })
+      );
+    } catch (imgErr) {
+      console.warn('图片插入失败', imgErr);
+      children.push(
+        new Paragraph({
+          text: '[图片加载失败]',
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 160 }
+        })
+      );
+    }
+
+    // 备注
+    const remarkText = p.remark.trim() || '（无备注）';
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: '备注：', bold: true, size: 22 }),
+          new TextRun({ text: remarkText, size: 22 })
+        ],
+        spacing: { after: 100 }
+      })
+    );
+
+    // 分隔线（最后一张不加）
+    if (i < photos.length - 1) {
+      children.push(
+        new Paragraph({
+          text: '- - - - - - - - - - - - - - - - - - - - - - - - -',
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 300, after: 300 }
+        })
+      );
+    }
+  }
+
+  // 页脚信息
+  children.push(
+    new Paragraph({
+      children: [
+        new TextRun({ text: '报告生成时间：' + new Date().toLocaleString('zh-CN'), size: 18, color: '888888' })
+      ],
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 600 }
+    })
+  );
+
+  const doc = new Document({
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 1080, bottom: 1080, left: 1260, right: 1260 }
+        }
+      },
+      children
+    }]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `巡查报告_${fileDate}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ============================================================
+//  工具函数
+// ============================================================
+function base64ToUint8Array(base64DataURL) {
+  const base64 = base64DataURL.split(',')[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function getMimeType(dataURL) {
+  const match = dataURL.match(/^data:([^;]+);/);
+  return match ? match[1] : 'image/jpeg';
+}
+
+function getImageDimensions(dataURL) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 800, height: 600 });
+    img.src = dataURL;
+  });
+}
+
+function generateId() {
+  return Date.now().toString(36) + (_idCounter++).toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function escapeHTML(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function setExportLoading(loading) {
+  const btn = document.getElementById('exportBtn');
+  const spinner = document.getElementById('exportSpinner');
+  const text = document.getElementById('exportBtnText');
+  btn.disabled = loading;
+  spinner.style.display = loading ? 'block' : 'none';
+  text.textContent = loading ? '正在生成文档...' : '📄 导出 Word 文档';
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// 点击弹窗背景关闭摄像头
+document.getElementById('cameraModal').addEventListener('click', function(e) {
+  if (e.target === this) closeCamera();
+});
+</script>
+</body>
+</html>
