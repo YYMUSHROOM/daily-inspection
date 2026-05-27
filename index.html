@@ -68,25 +68,27 @@
 
     /* ===== 操作区 ===== */
     .action-bar {
-      padding: 16px;
+      padding: 20px 16px;
       display: flex;
-      gap: 12px;
+      flex-direction: column;
+      gap: 16px;
     }
 
     .btn {
-      flex: 1;
+      width: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 14px 12px;
+      gap: 10px;
+      padding: 22px 16px;
       border: none;
       border-radius: var(--radius);
-      font-size: 15px;
-      font-weight: 500;
+      font-size: 20px;
+      font-weight: 600;
       cursor: pointer;
       transition: all 0.18s ease;
       -webkit-tap-highlight-color: transparent;
+      letter-spacing: 1px;
     }
 
     .btn-primary {
@@ -100,7 +102,7 @@
     .btn-secondary {
       background: var(--card-bg);
       color: var(--primary);
-      border: 2px solid var(--primary);
+      border: 2.5px solid var(--primary);
     }
 
     .btn-secondary:active { background: var(--primary-light); transform: scale(0.97); }
@@ -244,21 +246,22 @@
 
     .btn-export {
       width: 100%;
-      padding: 15px;
+      padding: 22px;
       background: linear-gradient(135deg, var(--primary), #1565c0);
       color: #fff;
       border: none;
       border-radius: var(--radius);
-      font-size: 16px;
+      font-size: 20px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       box-shadow: 0 4px 16px rgba(25,118,210,0.4);
       transition: all 0.18s;
       -webkit-tap-highlight-color: transparent;
+      letter-spacing: 1px;
     }
 
     .btn-export:active { transform: scale(0.98); }
@@ -295,17 +298,35 @@
       object-fit: cover;
     }
 
+    /* 缩放指示器 */
+    .zoom-indicator {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 14px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      backdrop-filter: blur(4px);
+      display: none;
+      z-index: 5;
+    }
+
+    .zoom-indicator.visible { display: block; }
+
     .camera-controls {
       background: #111;
       padding: 16px;
       display: flex;
       gap: 12px;
       justify-content: center;
+      align-items: center;
     }
 
     .btn-capture {
-      width: 68px;
-      height: 68px;
+      width: 72px;
+      height: 72px;
       border-radius: 50%;
       background: #fff;
       border: 5px solid #aaa;
@@ -315,6 +336,24 @@
     }
 
     .btn-capture:active { transform: scale(0.9); background: #e0e0e0; }
+
+    .btn-zoom {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .btn-zoom:active { background: rgba(255,255,255,0.35); }
 
     .btn-close-camera {
       padding: 14px 24px;
@@ -409,10 +448,13 @@
 <!-- 摄像头弹窗 -->
 <div class="modal-overlay" id="cameraModal">
   <div class="camera-modal">
+    <span class="zoom-indicator" id="zoomIndicator">1.0x</span>
     <video id="cameraVideo" autoplay playsinline muted></video>
     <div class="camera-controls">
       <button class="btn-close-camera" onclick="closeCamera()">✕ 关闭</button>
+      <button class="btn-zoom" onclick="zoomOut()" title="缩小">−</button>
       <button class="btn-capture" onclick="capturePhoto()" title="拍摄"></button>
+      <button class="btn-zoom" onclick="zoomIn()" title="放大">+</button>
     </div>
   </div>
 </div>
@@ -433,6 +475,11 @@
 let photos = []; // { id, dataURL, time, remark }
 let mediaStream = null;
 let _idCounter = 0;
+let currentTrack = null;  // 当前摄像头轨道（用于缩放和对焦）
+let currentZoom = 1;      // 当前缩放倍率
+let zoomMin = 1;
+let zoomMax = 1;
+let zoomStep = 0.5;
 
 // ============================================================
 //  初始化
@@ -487,12 +534,42 @@ function renderPhotos() {
 // ============================================================
 async function openCamera() {
   try {
+    // 先请求后置摄像头
     mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        focusMode: 'continuous',   // 连续自动对焦
+        exposureMode: 'continuous' // 连续自动曝光
+      },
       audio: false
     });
+
     const video = document.getElementById('cameraVideo');
     video.srcObject = mediaStream;
+
+    // 获取视频轨道，设置对焦和缩放
+    currentTrack = mediaStream.getVideoTracks()[0];
+    currentZoom = 1;
+
+    // 启用连续自动对焦
+    try {
+      const capabilities = currentTrack.getCapabilities();
+      if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+        await currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+      // 读取缩放范围
+      if (capabilities.zoom) {
+        zoomMin = capabilities.zoom.min || 1;
+        zoomMax = capabilities.zoom.max || 1;
+        zoomStep = capabilities.zoom.step || 0.5;
+      }
+    } catch (e) {
+      console.log('对焦/缩放设置:', e.message);
+    }
+
+    updateZoomIndicator();
     document.getElementById('cameraModal').classList.add('active');
   } catch (err) {
     console.error('摄像头错误:', err);
@@ -511,9 +588,85 @@ function closeCamera() {
     mediaStream.getTracks().forEach(t => t.stop());
     mediaStream = null;
   }
+  currentTrack = null;
+  currentZoom = 1;
   document.getElementById('cameraModal').classList.remove('active');
   document.getElementById('cameraVideo').srcObject = null;
 }
+
+// 缩放
+async function zoomIn() {
+  if (!currentTrack) return;
+  try {
+    const newZoom = Math.min(currentZoom + zoomStep, zoomMax);
+    if (newZoom !== currentZoom) {
+      await currentTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
+      currentZoom = newZoom;
+      updateZoomIndicator();
+    }
+  } catch (e) { console.log('zoomIn:', e.message); }
+}
+
+async function zoomOut() {
+  if (!currentTrack) return;
+  try {
+    const newZoom = Math.max(currentZoom - zoomStep, zoomMin);
+    if (newZoom !== currentZoom) {
+      await currentTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
+      currentZoom = newZoom;
+      updateZoomIndicator();
+    }
+  } catch (e) { console.log('zoomOut:', e.message); }
+}
+
+function updateZoomIndicator() {
+  const el = document.getElementById('zoomIndicator');
+  if (currentZoom > 1 || zoomMax > 1) {
+    el.textContent = currentZoom.toFixed(1) + 'x';
+    el.classList.add('visible');
+  } else {
+    el.classList.remove('visible');
+  }
+}
+
+// 触摸缩放支持（双指缩放）
+let lastTouchDistance = 0;
+document.getElementById('cameraVideo').addEventListener('touchstart', function(e) {
+  if (e.touches.length === 2) {
+    lastTouchDistance = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+
+document.getElementById('cameraVideo').addEventListener('touchmove', async function(e) {
+  if (e.touches.length === 2 && currentTrack) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (lastTouchDistance > 0) {
+      const delta = dist - lastTouchDistance;
+      if (delta > 20) { await zoomIn(); lastTouchDistance = dist; }
+      else if (delta < -20) { await zoomOut(); lastTouchDistance = dist; }
+    }
+  }
+}, { passive: true });
+
+// 点击对焦（触摸屏幕中心区域对焦）
+document.getElementById('cameraVideo').addEventListener('click', async function(e) {
+  if (!currentTrack) return;
+  try {
+    const capabilities = currentTrack.getCapabilities();
+    if (capabilities.focusMode) {
+      // 触发一次对焦
+      if (capabilities.focusMode.includes('continuous')) {
+        await currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      }
+    }
+  } catch (e) { /* 静默 */ }
+});
 
 function capturePhoto() {
   const video = document.getElementById('cameraVideo');
@@ -584,6 +737,7 @@ function addPhoto(dataURL) {
     <div class="photo-card-body">
       <textarea
         class="remark-input"
+        id="remark-${photo.id}"
         placeholder="请输入备注，如：巡查位置、发现问题等..."
         oninput="updateRemark('${photo.id}', this.value)"
       ></textarea>
@@ -593,6 +747,15 @@ function addPhoto(dataURL) {
 
   // 更新徽章
   document.getElementById('photoBadge').textContent = photos.length + ' 张照片';
+
+  // 拍照后自动弹出备注栏并聚焦，滚动到该照片
+  setTimeout(() => {
+    const textarea = document.getElementById('remark-' + photo.id);
+    if (textarea) {
+      textarea.focus();
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
 }
 
 function deletePhoto(id) {
@@ -667,8 +830,7 @@ function syncRemarksFromDOM() {
 async function buildAndDownloadDocx() {
   const {
     Document, Paragraph, TextRun, ImageRun,
-    AlignmentType, HeadingLevel, Table, TableRow, TableCell,
-    WidthType, BorderStyle, Packer
+    AlignmentType, HeadingLevel, Packer
   } = docx;
 
   const today = new Date();
@@ -688,7 +850,7 @@ async function buildAndDownloadDocx() {
     })
   );
 
-  // 日期
+  // 巡查日期
   children.push(
     new Paragraph({
       children: [
@@ -696,28 +858,7 @@ async function buildAndDownloadDocx() {
         new TextRun({ text: dateLabel, size: 24 }),
       ],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 200 }
-    })
-  );
-
-  // 照片总数
-  children.push(
-    new Paragraph({
-      children: [
-        new TextRun({ text: '照片数量：', bold: true, size: 24 }),
-        new TextRun({ text: photos.length + ' 张', size: 24 }),
-      ],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 400 }
-    })
-  );
-
-  // 分隔线
-  children.push(
-    new Paragraph({
-      text: '────────────────────────────────────',
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 400 }
+      spacing: { after: 600 }
     })
   );
 
@@ -725,18 +866,18 @@ async function buildAndDownloadDocx() {
   for (let i = 0; i < photos.length; i++) {
     const p = photos[i];
 
-    // 照片序号标题
+    // 序号
     children.push(
       new Paragraph({
         children: [
           new TextRun({
-            text: `第 ${i + 1} 张  （拍摄时间：${p.time}）`,
+            text: (i + 1) + '.',
             bold: true,
             size: 26,
-            color: '1976d2'
+            color: '333333'
           })
         ],
-        spacing: { before: 300, after: 200 }
+        spacing: { before: 300, after: 100 }
       })
     );
 
@@ -746,7 +887,7 @@ async function buildAndDownloadDocx() {
       const mimeType = getMimeType(p.dataURL);
       const dims = await getImageDimensions(p.dataURL);
 
-      // docx ImageRun transformation 单位是像素(px)，不是磅(pt)
+      // docx ImageRun transformation 单位是像素(px)
       // 540px ≈ 14.2cm at 96dpi，适合 A4 页面宽度
       const MAX_WIDTH_PX = 540;
       const MAX_HEIGHT_PX = 400;
@@ -772,7 +913,7 @@ async function buildAndDownloadDocx() {
             })
           ],
           alignment: AlignmentType.CENTER,
-          spacing: { after: 160 }
+          spacing: { after: 80 }
         })
       );
     } catch (imgErr) {
@@ -781,45 +922,24 @@ async function buildAndDownloadDocx() {
         new Paragraph({
           text: '[图片加载失败]',
           alignment: AlignmentType.CENTER,
-          spacing: { after: 160 }
+          spacing: { after: 80 }
         })
       );
     }
 
-    // 备注
-    const remarkText = p.remark.trim() || '（无备注）';
-    children.push(
-      new Paragraph({
-        children: [
-          new TextRun({ text: '备注：', bold: true, size: 22 }),
-          new TextRun({ text: remarkText, size: 22 })
-        ],
-        spacing: { after: 100 }
-      })
-    );
-
-    // 分隔线（最后一张不加）
-    if (i < photos.length - 1) {
+    // 备注文字直接写在照片下方
+    const remarkText = p.remark.trim();
+    if (remarkText) {
       children.push(
         new Paragraph({
-          text: '- - - - - - - - - - - - - - - - - - - - - - - - -',
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 300, after: 300 }
+          children: [
+            new TextRun({ text: remarkText, size: 22 })
+          ],
+          spacing: { after: 100 }
         })
       );
     }
   }
-
-  // 页脚信息
-  children.push(
-    new Paragraph({
-      children: [
-        new TextRun({ text: '报告生成时间：' + new Date().toLocaleString('zh-CN'), size: 18, color: '888888' })
-      ],
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 600 }
-    })
-  );
 
   const doc = new Document({
     sections: [{
