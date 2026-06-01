@@ -95,6 +95,8 @@
       background: var(--primary);
       color: #fff;
       box-shadow: 0 4px 12px rgba(25,118,210,0.35);
+      cursor: pointer;
+      user-select: none;
     }
 
     .btn-primary:active { background: var(--primary-dark); transform: scale(0.97); }
@@ -420,9 +422,10 @@
 
 <!-- 操作按钮 -->
 <div class="action-bar">
-  <button class="btn btn-primary" onclick="openCamera()">
+  <!-- 调用系统原生相机（支持变焦、对焦、HDR等全部功能） -->
+  <label class="btn btn-primary" for="cameraInput">
     📷 拍照
-  </button>
+  </label>
   <button class="btn btn-secondary" onclick="selectFile()">
     📁 选择图片
   </button>
@@ -445,8 +448,8 @@
   </button>
 </div>
 
-<!-- 摄像头弹窗 -->
-<div class="modal-overlay" id="cameraModal">
+<!-- 摄像头弹窗（保留备用，主流程已改用系统原生相机） -->
+<div class="modal-overlay" id="cameraModal" style="display:none!important">
   <div class="camera-modal">
     <span class="zoom-indicator" id="zoomIndicator">1.0x</span>
     <video id="cameraVideo" autoplay playsinline muted></video>
@@ -461,6 +464,9 @@
 
 <!-- 隐藏的 canvas 用于截帧 -->
 <canvas id="snapCanvas"></canvas>
+
+<!-- 隐藏的系统相机 input（调用手机原生相机，支持完整变焦/对焦） -->
+<input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleCameraCapture(event)" />
 
 <!-- 隐藏的文件选择 input -->
 <input type="file" id="fileInput" accept="image/*" multiple style="display:none" onchange="handleFileSelect(event)" />
@@ -682,8 +688,24 @@ function capturePhoto() {
 }
 
 // ============================================================
-//  文件选择
+//  文件选择 / 系统相机
 // ============================================================
+
+// 系统原生相机拍照回调（capture="environment" 调用手机相机后返回）
+function handleCameraCapture(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  // 压缩到合理尺寸后添加（原生相机照片通常很大，压缩节省内存）
+  compressImage(file, 1920, 0.88).then(dataURL => {
+    addPhoto(dataURL);
+    showToast('照片已添加');
+  });
+
+  // 重置 input，允许连续拍照
+  event.target.value = '';
+}
+
 function selectFile() {
   document.getElementById('fileInput').click();
 }
@@ -694,15 +716,14 @@ function handleFileSelect(event) {
 
   let loaded = 0;
   files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      addPhoto(e.target.result);
+    // 同样压缩处理，确保大图不卡顿
+    compressImage(file, 1920, 0.88).then(dataURL => {
+      addPhoto(dataURL);
       loaded++;
       if (loaded === files.length) {
         showToast(`已添加 ${files.length} 张照片`);
       }
-    };
-    reader.readAsDataURL(file);
+    });
   });
 
   // 重置 input，允许重复选同一文件
@@ -966,6 +987,42 @@ async function buildAndDownloadDocx() {
 // ============================================================
 //  工具函数
 // ============================================================
+
+/**
+ * 压缩图片到指定最大宽度
+ * @param {File} file  图片文件
+ * @param {number} maxWidth  最大宽度（px）
+ * @param {number} quality   JPEG 质量 0-1
+ * @returns {Promise<string>} dataURL
+ */
+function compressImage(file, maxWidth, quality) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+
+        // 等比例缩放
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w));
+          w = maxWidth;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(e.target.result); // 失败则用原图
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 function base64ToUint8Array(base64DataURL) {
   const base64 = base64DataURL.split(',')[1];
   const binary = atob(base64);
