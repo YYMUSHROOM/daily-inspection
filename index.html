@@ -269,107 +269,6 @@
     .btn-export:active { transform: scale(0.98); }
     .btn-export:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
 
-    /* ===== 摄像头弹窗 ===== */
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.75);
-      z-index: 200;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-    }
-
-    .modal-overlay.active { display: flex; }
-
-    .camera-modal {
-      background: #000;
-      border-radius: 16px;
-      overflow: hidden;
-      width: 100%;
-      max-width: 500px;
-      position: relative;
-    }
-
-    #cameraVideo {
-      width: 100%;
-      display: block;
-      max-height: 70vh;
-      background: #111;
-      object-fit: cover;
-    }
-
-    /* 缩放指示器 */
-    .zoom-indicator {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      background: rgba(0,0,0,0.6);
-      color: #fff;
-      font-size: 14px;
-      padding: 4px 10px;
-      border-radius: 12px;
-      backdrop-filter: blur(4px);
-      display: none;
-      z-index: 5;
-    }
-
-    .zoom-indicator.visible { display: block; }
-
-    .camera-controls {
-      background: #111;
-      padding: 16px;
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .btn-capture {
-      width: 72px;
-      height: 72px;
-      border-radius: 50%;
-      background: #fff;
-      border: 5px solid #aaa;
-      cursor: pointer;
-      transition: transform 0.12s, background 0.12s;
-      flex-shrink: 0;
-    }
-
-    .btn-capture:active { transform: scale(0.9); background: #e0e0e0; }
-
-    .btn-zoom {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.2);
-      color: #fff;
-      border: none;
-      font-size: 22px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }
-
-    .btn-zoom:active { background: rgba(255,255,255,0.35); }
-
-    .btn-close-camera {
-      padding: 14px 24px;
-      background: rgba(255,255,255,0.15);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 15px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    .btn-close-camera:hover { background: rgba(255,255,255,0.25); }
-
     /* ===== 提示 Toast ===== */
     .toast {
       position: fixed;
@@ -390,9 +289,6 @@
 
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-    /* ===== 隐藏的 canvas ===== */
-    #snapCanvas { display: none; }
-
     /* ===== 加载动画 ===== */
     .btn-export .spinner {
       width: 18px;
@@ -405,6 +301,20 @@
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== 拍照提示条 ===== */
+    .camera-tip {
+      display: none;
+      background: #e8f5e9;
+      color: #2e7d32;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      text-align: center;
+      margin: 0 16px;
+      line-height: 1.5;
+    }
+    .camera-tip.show { display: block; }
   </style>
 </head>
 <body>
@@ -422,7 +332,7 @@
 
 <!-- 操作按钮 -->
 <div class="action-bar">
-  <!-- 调用系统原生相机（支持变焦、对焦、HDR等全部功能） -->
+  <!-- 调用系统原生相机：capture="environment" 确保打开后置摄像头 -->
   <label class="btn btn-primary" for="cameraInput">
     📷 拍照
   </label>
@@ -431,13 +341,18 @@
   </button>
 </div>
 
+<!-- 原生相机使用提示 -->
+<div class="camera-tip show" id="cameraTip">
+  💡 点击"拍照"将打开手机相机，可使用全部相机功能（变焦、对焦、HDR等）
+</div>
+
 <!-- 照片列表 -->
 <div id="photoGrid" class="photo-grid"></div>
 
 <!-- 空状态 -->
 <div id="emptyState" class="empty-state">
   <div class="icon">📸</div>
-  <p>还没有照片<br />点击"拍照"或"选择图片"开始巡查</p>
+  <p>还没有照片<br />点击"拍照"开始巡查</p>
 </div>
 
 <!-- 底部导出栏 -->
@@ -448,27 +363,10 @@
   </button>
 </div>
 
-<!-- 摄像头弹窗（保留备用，主流程已改用系统原生相机） -->
-<div class="modal-overlay" id="cameraModal" style="display:none!important">
-  <div class="camera-modal">
-    <span class="zoom-indicator" id="zoomIndicator">1.0x</span>
-    <video id="cameraVideo" autoplay playsinline muted></video>
-    <div class="camera-controls">
-      <button class="btn-close-camera" onclick="closeCamera()">✕ 关闭</button>
-      <button class="btn-zoom" onclick="zoomOut()" title="缩小">−</button>
-      <button class="btn-capture" onclick="capturePhoto()" title="拍摄"></button>
-      <button class="btn-zoom" onclick="zoomIn()" title="放大">+</button>
-    </div>
-  </div>
-</div>
-
-<!-- 隐藏的 canvas 用于截帧 -->
-<canvas id="snapCanvas"></canvas>
-
-<!-- 隐藏的系统相机 input（调用手机原生相机，支持完整变焦/对焦） -->
+<!-- 隐藏的系统相机 input：capture="environment" 强制调用后置相机 -->
 <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleCameraCapture(event)" />
 
-<!-- 隐藏的文件选择 input -->
+<!-- 隐藏的文件选择 input（不使用 capture，允许从相册选择） -->
 <input type="file" id="fileInput" accept="image/*" multiple style="display:none" onchange="handleFileSelect(event)" />
 
 <!-- Toast 提示 -->
@@ -479,233 +377,49 @@
 //  数据层
 // ============================================================
 let photos = []; // { id, dataURL, time, remark }
-let mediaStream = null;
 let _idCounter = 0;
-let currentTrack = null;  // 当前摄像头轨道（用于缩放和对焦）
-let currentZoom = 1;      // 当前缩放倍率
-let zoomMin = 1;
-let zoomMax = 1;
-let zoomStep = 0.5;
 
 // ============================================================
 //  初始化
 // ============================================================
 (function init() {
-  // 显示今日日期
   const now = new Date();
   const dateStr = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   document.getElementById('headerDate').textContent = dateStr;
-  renderPhotos();
+
+  // 3 秒后自动隐藏相机提示
+  setTimeout(() => {
+    const tip = document.getElementById('cameraTip');
+    if (tip) tip.classList.remove('show');
+  }, 5000);
 })();
 
 // ============================================================
-//  渲染照片列表
-// ============================================================
-function renderPhotos() {
-  const grid = document.getElementById('photoGrid');
-  const empty = document.getElementById('emptyState');
-  const badge = document.getElementById('photoBadge');
-
-  badge.textContent = photos.length + ' 张照片';
-
-  if (photos.length === 0) {
-    grid.innerHTML = '';
-    empty.style.display = 'flex';
-    return;
-  }
-
-  empty.style.display = 'none';
-
-  grid.innerHTML = photos.map((p, idx) => `
-    <div class="photo-card" id="card-${p.id}">
-      <div class="photo-card-header">
-        <img src="${p.dataURL}" alt="巡查照片 ${idx + 1}" loading="lazy" />
-        <span class="photo-number">No.${idx + 1}</span>
-        <span class="photo-time">${p.time}</span>
-        <button class="delete-btn" onclick="deletePhoto('${p.id}')" title="删除">✕</button>
-      </div>
-      <div class="photo-card-body">
-        <textarea
-          class="remark-input"
-          placeholder="请输入备注，如：巡查位置、发现问题等..."
-          oninput="updateRemark('${p.id}', this.value)"
-        >${escapeHTML(p.remark)}</textarea>
-      </div>
-    </div>
-  `).join('');
-}
-
-// ============================================================
-//  摄像头相关
-// ============================================================
-async function openCamera() {
-  try {
-    // 先请求后置摄像头
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        focusMode: 'continuous',   // 连续自动对焦
-        exposureMode: 'continuous' // 连续自动曝光
-      },
-      audio: false
-    });
-
-    const video = document.getElementById('cameraVideo');
-    video.srcObject = mediaStream;
-
-    // 获取视频轨道，设置对焦和缩放
-    currentTrack = mediaStream.getVideoTracks()[0];
-    currentZoom = 1;
-
-    // 启用连续自动对焦
-    try {
-      const capabilities = currentTrack.getCapabilities();
-      if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-        await currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      }
-      // 读取缩放范围
-      if (capabilities.zoom) {
-        zoomMin = capabilities.zoom.min || 1;
-        zoomMax = capabilities.zoom.max || 1;
-        zoomStep = capabilities.zoom.step || 0.5;
-      }
-    } catch (e) {
-      console.log('对焦/缩放设置:', e.message);
-    }
-
-    updateZoomIndicator();
-    document.getElementById('cameraModal').classList.add('active');
-  } catch (err) {
-    console.error('摄像头错误:', err);
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showToast('摄像头权限被拒绝，请在浏览器设置中允许访问');
-    } else if (err.name === 'NotFoundError') {
-      showToast('未找到摄像头，请使用"选择图片"功能');
-    } else {
-      showToast('无法打开摄像头：' + err.message);
-    }
-  }
-}
-
-function closeCamera() {
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(t => t.stop());
-    mediaStream = null;
-  }
-  currentTrack = null;
-  currentZoom = 1;
-  document.getElementById('cameraModal').classList.remove('active');
-  document.getElementById('cameraVideo').srcObject = null;
-}
-
-// 缩放
-async function zoomIn() {
-  if (!currentTrack) return;
-  try {
-    const newZoom = Math.min(currentZoom + zoomStep, zoomMax);
-    if (newZoom !== currentZoom) {
-      await currentTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
-      currentZoom = newZoom;
-      updateZoomIndicator();
-    }
-  } catch (e) { console.log('zoomIn:', e.message); }
-}
-
-async function zoomOut() {
-  if (!currentTrack) return;
-  try {
-    const newZoom = Math.max(currentZoom - zoomStep, zoomMin);
-    if (newZoom !== currentZoom) {
-      await currentTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
-      currentZoom = newZoom;
-      updateZoomIndicator();
-    }
-  } catch (e) { console.log('zoomOut:', e.message); }
-}
-
-function updateZoomIndicator() {
-  const el = document.getElementById('zoomIndicator');
-  if (currentZoom > 1 || zoomMax > 1) {
-    el.textContent = currentZoom.toFixed(1) + 'x';
-    el.classList.add('visible');
-  } else {
-    el.classList.remove('visible');
-  }
-}
-
-// 触摸缩放支持（双指缩放）
-let lastTouchDistance = 0;
-document.getElementById('cameraVideo').addEventListener('touchstart', function(e) {
-  if (e.touches.length === 2) {
-    lastTouchDistance = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-  }
-}, { passive: true });
-
-document.getElementById('cameraVideo').addEventListener('touchmove', async function(e) {
-  if (e.touches.length === 2 && currentTrack) {
-    const dist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-    if (lastTouchDistance > 0) {
-      const delta = dist - lastTouchDistance;
-      if (delta > 20) { await zoomIn(); lastTouchDistance = dist; }
-      else if (delta < -20) { await zoomOut(); lastTouchDistance = dist; }
-    }
-  }
-}, { passive: true });
-
-// 点击对焦（触摸屏幕中心区域对焦）
-document.getElementById('cameraVideo').addEventListener('click', async function(e) {
-  if (!currentTrack) return;
-  try {
-    const capabilities = currentTrack.getCapabilities();
-    if (capabilities.focusMode) {
-      // 触发一次对焦
-      if (capabilities.focusMode.includes('continuous')) {
-        await currentTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      }
-    }
-  } catch (e) { /* 静默 */ }
-});
-
-function capturePhoto() {
-  const video = document.getElementById('cameraVideo');
-  const canvas = document.getElementById('snapCanvas');
-  canvas.width = video.videoWidth || 1280;
-  canvas.height = video.videoHeight || 720;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataURL = canvas.toDataURL('image/jpeg', 0.92);
-  addPhoto(dataURL);
-  closeCamera();
-  showToast('照片已添加');
-}
-
-// ============================================================
-//  文件选择 / 系统相机
+//  系统原生相机拍照（核心入口）
 // ============================================================
 
-// 系统原生相机拍照回调（capture="environment" 调用手机相机后返回）
+/**
+ * 系统相机回调 - capture="environment" 会打开手机原生相机App
+ * 原生相机完整支持：变焦（捏合/滑动）、对焦（点击）、HDR、夜间模式、闪光灯等
+ */
 function handleCameraCapture(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
 
-  // 压缩到合理尺寸后添加（原生相机照片通常很大，压缩节省内存）
-  compressImage(file, 1920, 0.88).then(dataURL => {
-    addPhoto(dataURL);
-    showToast('照片已添加');
-  });
+  // 隐藏提示条
+  const tip = document.getElementById('cameraTip');
+  if (tip) tip.classList.remove('show');
+
+  // 读取图片并自动修正 EXIF 方向，然后压缩
+  processAndAddPhoto(file);
 
   // 重置 input，允许连续拍照
   event.target.value = '';
 }
 
+// ============================================================
+//  文件选择（从相册）
+// ============================================================
 function selectFile() {
   document.getElementById('fileInput').click();
 }
@@ -716,18 +430,155 @@ function handleFileSelect(event) {
 
   let loaded = 0;
   files.forEach(file => {
-    // 同样压缩处理，确保大图不卡顿
-    compressImage(file, 1920, 0.88).then(dataURL => {
-      addPhoto(dataURL);
+    processAndAddPhoto(file, () => {
       loaded++;
       if (loaded === files.length) {
-        showToast(`已添加 ${files.length} 张照片`);
+        showToast('已添加 ' + files.length + ' 张照片');
       }
     });
   });
 
-  // 重置 input，允许重复选同一文件
   event.target.value = '';
+}
+
+// ============================================================
+//  图片处理：EXIF 方向校正 + 压缩
+// ============================================================
+
+/**
+ * 处理图片文件：修正 EXIF 旋转 + 压缩到合理尺寸
+ * 手机拍的照片经常有 EXIF Orientation 标记，浏览器 <img> 会自动旋转
+ * 但 Canvas 不会，所以需要手动校正后再压缩
+ */
+function processAndAddPhoto(file, callback) {
+  readExifOrientation(file).then(orientation => {
+    compressImage(file, 1920, 0.88, orientation).then(dataURL => {
+      addPhoto(dataURL);
+      if (!callback) showToast('照片已添加');
+      if (callback) callback();
+    });
+  });
+}
+
+/**
+ * 读取图片的 EXIF Orientation 值
+ * 返回 1-8 的数字，1 表示无需旋转
+ */
+function readExifOrientation(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const view = new DataView(e.target.result);
+        // 检查 JPEG 标记
+        if (view.getUint16(0, false) !== 0xFFD8) { resolve(1); return; }
+        let offset = 2;
+        while (offset < view.byteLength - 2) {
+          const marker = view.getUint16(offset, false);
+          offset += 2;
+          // APP1 = EXIF
+          if (marker === 0xFFE1) {
+            const length = view.getUint16(offset, false);
+            // 检查 "Exif" 标识
+            if (offset + 6 <= view.byteLength &&
+                String.fromCharCode(view.getUint8(offset + 2), view.getUint8(offset + 3),
+                                     view.getUint8(offset + 4), view.getUint8(offset + 5)) === 'Exif') {
+              // 找到 TIFF 头
+              const tiffOffset = offset + 6;
+              const littleEndian = view.getUint16(tiffOffset, false) === 0x4949;
+              // IFD0 偏移
+              const ifdOffset = view.getUint32(tiffOffset + 4, littleEndian);
+              const ifdStart = tiffOffset + ifdOffset;
+              const numEntries = view.getUint16(ifdStart, littleEndian);
+              // 遍历 IFD 条目查找 Orientation (tag 0x0112)
+              for (let i = 0; i < numEntries; i++) {
+                const entryOffset = ifdStart + 2 + i * 12;
+                if (entryOffset + 12 > view.byteLength) break;
+                const tag = view.getUint16(entryOffset, littleEndian);
+                if (tag === 0x0112) {
+                  resolve(view.getUint16(entryOffset + 8, littleEndian));
+                  return;
+                }
+              }
+            }
+            offset += length;
+          } else if ((marker & 0xFF00) === 0xFF00) {
+            offset += view.getUint16(offset, false);
+          } else {
+            break;
+          }
+        }
+      } catch (ex) { /* 解析失败则不旋转 */ }
+      resolve(1);
+    };
+    reader.onerror = () => resolve(1);
+    // 只读取前 64KB 用于 EXIF 解析
+    reader.readAsArrayBuffer(file.slice(0, 65536));
+  });
+}
+
+/**
+ * 压缩图片，同时根据 EXIF Orientation 校正旋转
+ * @param {File} file       图片文件
+ * @param {number} maxWidth 最大宽度
+ * @param {number} quality  JPEG 质量 0-1
+ * @param {number} orientation EXIF Orientation (1-8)
+ */
+function compressImage(file, maxWidth, quality, orientation) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+
+        // 根据 EXIF Orientation 计算旋转后的尺寸
+        let needRotate = false;
+        if (orientation >= 5 && orientation <= 8) {
+          // 90° 或 270° 旋转，宽高互换
+          needRotate = true;
+          [w, h] = [h, w];
+        }
+
+        // 等比例缩放
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w));
+          w = maxWidth;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+
+        // 应用 EXIF 旋转
+        if (orientation && orientation !== 1) {
+          ctx.save();
+          ctx.translate(w / 2, h / 2);
+          switch (orientation) {
+            case 2: ctx.scale(-1, 1); break;                  // 水平翻转
+            case 3: ctx.rotate(Math.PI); break;                // 180°
+            case 4: ctx.scale(1, -1); break;                   // 垂直翻转
+            case 5: ctx.rotate(Math.PI / 2); ctx.scale(1, -1); break;  // 90° CW + 水平翻转
+            case 6: ctx.rotate(Math.PI / 2); break;            // 90° CW
+            case 7: ctx.rotate(-Math.PI / 2); ctx.scale(1, -1); break; // 90° CCW + 水平翻转
+            case 8: ctx.rotate(-Math.PI / 2); break;           // 90° CCW
+          }
+          ctx.translate(-img.naturalWidth / 2, -img.naturalHeight / 2);
+          ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, 0, 0, w, h);
+        }
+
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(e.target.result);
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // ============================================================
@@ -739,7 +590,7 @@ function addPhoto(dataURL) {
   const photo = { id: generateId(), dataURL, time, remark: '' };
   photos.push(photo);
 
-  // 追加单张卡片，避免全量重建导致 textarea 失焦
+  // 追加单张卡片
   const grid = document.getElementById('photoGrid');
   const empty = document.getElementById('emptyState');
   empty.style.display = 'none';
@@ -769,34 +620,29 @@ function addPhoto(dataURL) {
   // 更新徽章
   document.getElementById('photoBadge').textContent = photos.length + ' 张照片';
 
-  // 拍照后自动弹出备注栏并聚焦，滚动到该照片
+  // 拍照后自动聚焦备注框并滚动到该照片
   setTimeout(() => {
     const textarea = document.getElementById('remark-' + photo.id);
     if (textarea) {
       textarea.focus();
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, 100);
+  }, 150);
 }
 
 function deletePhoto(id) {
-  // 先从数据中移除
   photos = photos.filter(p => p.id !== id);
 
-  // 移除对应 DOM 卡片，避免全量重建
   const card = document.getElementById('card-' + id);
   if (card) card.remove();
 
-  // 更新徽章
   document.getElementById('photoBadge').textContent = photos.length + ' 张照片';
 
-  // 更新空状态
-  const empty = document.getElementById('emptyState');
   if (photos.length === 0) {
-    empty.style.display = 'flex';
+    document.getElementById('emptyState').style.display = 'flex';
   }
 
-  // 重新编号所有序号
+  // 重新编号
   const grid = document.getElementById('photoGrid');
   const cards = grid.querySelectorAll('.photo-card');
   cards.forEach((c, i) => {
@@ -821,10 +667,7 @@ async function exportWord() {
     return;
   }
 
-  // 确保备注已同步（从 DOM 读取最新值）
   syncRemarksFromDOM();
-
-  // 显示加载状态
   setExportLoading(true);
 
   try {
@@ -858,7 +701,6 @@ async function buildAndDownloadDocx() {
   const dateLabel = today.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
   const fileDate = today.toISOString().slice(0, 10);
 
-  // 构建文档内容
   const children = [];
 
   // 标题
@@ -908,8 +750,6 @@ async function buildAndDownloadDocx() {
       const mimeType = getMimeType(p.dataURL);
       const dims = await getImageDimensions(p.dataURL);
 
-      // docx ImageRun transformation 单位是像素(px)
-      // 540px ≈ 14.2cm at 96dpi，适合 A4 页面宽度
       const MAX_WIDTH_PX = 540;
       const MAX_HEIGHT_PX = 400;
       let wPx = dims.width;
@@ -948,7 +788,7 @@ async function buildAndDownloadDocx() {
       );
     }
 
-    // 备注文字直接写在照片下方
+    // 备注直接写在照片下方
     const remarkText = p.remark.trim();
     if (remarkText) {
       children.push(
@@ -977,7 +817,7 @@ async function buildAndDownloadDocx() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `巡查报告_${fileDate}.docx`;
+  a.download = '巡查报告_' + fileDate + '.docx';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -988,41 +828,6 @@ async function buildAndDownloadDocx() {
 //  工具函数
 // ============================================================
 
-/**
- * 压缩图片到指定最大宽度
- * @param {File} file  图片文件
- * @param {number} maxWidth  最大宽度（px）
- * @param {number} quality   JPEG 质量 0-1
- * @returns {Promise<string>} dataURL
- */
-function compressImage(file, maxWidth, quality) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let w = img.naturalWidth;
-        let h = img.naturalHeight;
-
-        // 等比例缩放
-        if (w > maxWidth) {
-          h = Math.round(h * (maxWidth / w));
-          w = maxWidth;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = () => resolve(e.target.result); // 失败则用原图
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
 function base64ToUint8Array(base64DataURL) {
   const base64 = base64DataURL.split(',')[1];
   const binary = atob(base64);
@@ -1076,11 +881,6 @@ function showToast(msg) {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
-
-// 点击弹窗背景关闭摄像头
-document.getElementById('cameraModal').addEventListener('click', function(e) {
-  if (e.target === this) closeCamera();
-});
 </script>
 </body>
 </html>
